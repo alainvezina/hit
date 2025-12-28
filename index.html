@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HIT - Hit It at 10 Seconds</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            max-width: 600px;
+            width: 100%;
+            text-align: center;
+        }
+
+        h1 {
+            color: #333;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+        }
+
+        .timer-display {
+            font-size: 5em;
+            font-weight: bold;
+            color: #667eea;
+            margin: 30px 0;
+            font-variant-numeric: tabular-nums;
+            transition: color 0.3s ease;
+        }
+
+        .timer-display.warning {
+            color: #f59e0b;
+        }
+
+        .timer-display.failed {
+            color: #ef4444;
+        }
+
+        .score-area {
+            margin: 30px 0;
+            min-height: 80px;
+        }
+
+        .current-attempt {
+            font-size: 1.3em;
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .current-attempt.failed {
+            color: #ef4444;
+            font-weight: bold;
+        }
+
+        .best-score {
+            font-size: 1.1em;
+            color: #666;
+        }
+
+        .best-score-value {
+            color: #667eea;
+            font-weight: bold;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            margin-top: 30px;
+        }
+
+        button {
+            padding: 15px 30px;
+            font-size: 1.1em;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-weight: 600;
+        }
+
+        .btn-start-stop {
+            background: #667eea;
+            color: white;
+            flex: 1;
+        }
+
+        .btn-start-stop:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+        }
+
+        .btn-start-stop:active {
+            transform: translateY(0);
+        }
+
+        .btn-reset {
+            background: #e5e7eb;
+            color: #333;
+        }
+
+        .btn-reset:hover {
+            background: #d1d5db;
+            transform: translateY(-2px);
+        }
+
+        .btn-reset:active {
+            transform: translateY(0);
+        }
+
+        .instructions {
+            margin-top: 30px;
+            color: #666;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+
+        .instructions strong {
+            color: #333;
+        }
+
+        @media (max-width: 600px) {
+            .timer-display {
+                font-size: 3.5em;
+            }
+
+            h1 {
+                font-size: 2em;
+            }
+
+            .controls {
+                flex-direction: column;
+            }
+
+            button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>HIT</h1>
+        <div class="timer-display" id="timerDisplay">0.000</div>
+        
+        <div class="score-area">
+            <div class="current-attempt" id="currentAttempt"></div>
+            <div class="best-score">
+                Best: <span class="best-score-value" id="bestScore">--</span>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="btn-start-stop" id="startStopBtn">Start</button>
+            <button class="btn-reset" id="resetBtn">Reset</button>
+        </div>
+
+        <div class="instructions">
+            <p><strong>Goal:</strong> Press SPACE when the timer is closest to 10.000 seconds</p>
+            <p>Valid attempts: 0-12 seconds | Failed: Over 12 seconds</p>
+            <p>Press SPACE to start/stop the timer</p>
+        </div>
+    </div>
+
+    <script>
+        // Game state
+        let isRunning = false;
+        let startTime = null;
+        let elapsedTime = 0;
+        let animationFrameId = null;
+        let bestScore = null;
+        let isFailed = false;
+
+        // DOM elements
+        const timerDisplay = document.getElementById('timerDisplay');
+        const currentAttempt = document.getElementById('currentAttempt');
+        const bestScoreDisplay = document.getElementById('bestScore');
+        const startStopBtn = document.getElementById('startStopBtn');
+        const resetBtn = document.getElementById('resetBtn');
+
+        // Load best score from localStorage
+        function loadBestScore() {
+            const saved = localStorage.getItem('hitBestScore');
+            if (saved !== null) {
+                bestScore = parseFloat(saved);
+                updateBestScoreDisplay();
+            }
+        }
+
+        // Save best score to localStorage
+        function saveBestScore() {
+            if (bestScore !== null) {
+                localStorage.setItem('hitBestScore', bestScore.toString());
+            }
+        }
+
+        // Update best score display
+        function updateBestScoreDisplay() {
+            if (bestScore !== null) {
+                const time = bestScore.toFixed(3);
+                const diff = Math.abs(10.000 - bestScore).toFixed(3);
+                bestScoreDisplay.textContent = `${time}s (${diff}s away)`;
+            } else {
+                bestScoreDisplay.textContent = '--';
+            }
+        }
+
+        // Format time display
+        function formatTime(seconds) {
+            return seconds.toFixed(3);
+        }
+
+        // Update timer display
+        function updateTimer() {
+            if (!isRunning) return;
+
+            const now = performance.now();
+            elapsedTime = (now - startTime) / 1000; // Convert to seconds
+
+            // Check for auto-stop at 12 seconds
+            if (elapsedTime > 12) {
+                stopTimer(true); // true = auto-stopped (failed)
+                return;
+            }
+
+            // Update display
+            timerDisplay.textContent = formatTime(elapsedTime);
+
+            // Visual feedback at 10 seconds
+            if (elapsedTime >= 10) {
+                timerDisplay.classList.add('warning');
+            } else {
+                timerDisplay.classList.remove('warning');
+            }
+
+            animationFrameId = requestAnimationFrame(updateTimer);
+        }
+
+        // Start timer
+        function startTimer() {
+            if (isRunning) return;
+            
+            isRunning = true;
+            isFailed = false;
+            startTime = performance.now() - (elapsedTime * 1000);
+            startStopBtn.textContent = 'Stop';
+            timerDisplay.classList.remove('failed', 'warning');
+            currentAttempt.textContent = '';
+            animationFrameId = requestAnimationFrame(updateTimer);
+        }
+
+        // Stop timer
+        function stopTimer(autoStopped = false) {
+            if (!isRunning && !autoStopped) return;
+
+            isRunning = false;
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+
+            startStopBtn.textContent = 'Start';
+
+            // Handle failed attempt (over 12 seconds)
+            if (elapsedTime > 12) {
+                isFailed = true;
+                timerDisplay.classList.add('failed');
+                currentAttempt.textContent = 'FAILED - Timer exceeded 12 seconds';
+                currentAttempt.classList.add('failed');
+                return;
+            }
+
+            // Valid attempt - calculate score
+            const score = Math.abs(10.000 - elapsedTime);
+            const timeStr = formatTime(elapsedTime);
+            const diffStr = score.toFixed(3);
+            
+            currentAttempt.textContent = `${timeStr}s (${diffStr}s away from 10.000s)`;
+            currentAttempt.classList.remove('failed');
+
+            // Update best score if this is better
+            if (bestScore === null || score < Math.abs(10.000 - bestScore)) {
+                bestScore = elapsedTime;
+                saveBestScore();
+                updateBestScoreDisplay();
+            }
+        }
+
+        // Reset timer
+        function resetTimer() {
+            isRunning = false;
+            isFailed = false;
+            elapsedTime = 0;
+            startTime = null;
+            
+            if (animationFrameId) {
+                cancelAnimationFrame(animationFrameId);
+                animationFrameId = null;
+            }
+
+            timerDisplay.textContent = formatTime(0);
+            timerDisplay.classList.remove('warning', 'failed');
+            currentAttempt.textContent = '';
+            currentAttempt.classList.remove('failed');
+            startStopBtn.textContent = 'Start';
+        }
+
+        // Toggle start/stop
+        function toggleTimer() {
+            if (isRunning) {
+                stopTimer();
+            } else {
+                startTimer();
+            }
+        }
+
+        // Space key handler: stop if running, reset and start if stopped
+        function handleSpaceKey() {
+            if (isRunning) {
+                stopTimer();
+            } else {
+                resetTimer();
+                startTimer();
+            }
+        }
+
+        // Event listeners
+        startStopBtn.addEventListener('click', toggleTimer);
+        resetBtn.addEventListener('click', resetTimer);
+
+        // Keyboard handler for space key
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                handleSpaceKey();
+            }
+        });
+
+        // Initialize
+        loadBestScore();
+        updateBestScoreDisplay();
+    </script>
+</body>
+</html>
+
